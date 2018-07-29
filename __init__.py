@@ -17,6 +17,7 @@ import random
 import nltk
 import pandas
 import sqlite3
+import logging
 
 from nltk.stem.porter import *
 from threading import Thread
@@ -46,6 +47,7 @@ class BayesRehermann(object):
         to use to keep and retrieve snapshots.
         """
     
+        self.logger = logging.getlogger("BayesRehermann")
         self.data = []
         self.classifiers = {}
         self.history = {}
@@ -111,12 +113,10 @@ class BayesRehermann(object):
         
         return res
 
-    def sentence_data(self, sent, history, use_context=True, history_limit=5, **kwargs):
+    def sentence_data(self, sent, history, use_context=True, **kwargs):
         """
         Returns the feature set used in the classifier. Feel free to
         replace in subclasses :)
-        
-        Be very careful with the history limit parameter. It may be memory-consuming!
         """
     
         tokens = nltk.word_tokenize(sent)
@@ -141,13 +141,13 @@ class BayesRehermann(object):
             sub_data('last letter', word[-1])
             
         if use_context:
-            for i, h in enumerate(history[-history_limit:][::-1]):
+            for i, h in enumerate(history[::-1]):
                 for k, v in self.sentence_data(h, history[i + 1:], use_context=False).items():
                     data['-{} {}'.format(i, k)] = v
             
         return data
         
-    def create_snapshot(self, key, clear_data=True, message_handler=print, commit=True, use_threads=True):
+    def create_snapshot(self, key, clear_data=True, message_handler=print, history_limit=5, commit=True, use_threads=True):
         """
         Creates a snapshot using the current sentence data buffer.
         """
@@ -170,13 +170,16 @@ class BayesRehermann(object):
             
         def train():
             train_data = []
+            
             if message_handler is not None:
                 message_handler("Constructing training data for snapshot '{}'...".format(key))
+                 
+            self.logger.debug("Constructing training data from {} effective sentences.".format(sum(map(len, self.data))))
                  
             for context in self.data:
                 for i, sentence in enumerate(context[:-1]):
                     for wi, word in list(enumerate(context[i + 1].split(' '))):
-                        train_data.append((self.sentence_data(sentence, context[:i], response_index=wi), word))
+                        train_data.append((self.sentence_data(sentence, context[i - history_limit:i], response_index=wi), word))
                         
             if message_handler is not None:
                 message_handler("Training snapshot '{}'...".format(key))
