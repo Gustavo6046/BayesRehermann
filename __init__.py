@@ -109,7 +109,7 @@ class BayesRehermann(object):
         
         return res
 
-    def sentence_data(self, sent, history, use_context=True, **kwargs):
+    def sentence_data(self, sent, history, use_context=True, history_limit=10, **kwargs):
         """
         Returns the feature set used in the classifier. Feel free to
         replace in subclasses :)
@@ -140,7 +140,7 @@ class BayesRehermann(object):
             sub_data('first letter', word[-1])
             
         if use_context:
-            for i, h in enumerate(history):
+            for i, h in enumerate(history[-i + 1 + history_limit:][::-1]):
                 for k, v in self.sentence_data(h, history[i + 1:], use_context=False).items():
                     data['-{} {}'.format(i, k)] = v
             
