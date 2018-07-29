@@ -47,7 +47,7 @@ class BayesRehermann(object):
         to use to keep and retrieve snapshots.
         """
     
-        self.logger = logging.getlogger("BayesRehermann")
+        self.logger = logging.getLogger("BayesRehermann")
         self.data = []
         self.classifiers = {}
         self.history = {}
