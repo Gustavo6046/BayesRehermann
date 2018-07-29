@@ -228,6 +228,18 @@ class BayesRehermann(object):
 
         self.data.append(conversation)
         
+    def restore_snapshot(self, snapshot):
+        """
+        Restore a snapshot, extending it into the conversational buffer, usually to further develop it into
+        another snapshot, or include it as part of another snapshot (which technically is the same).
+        """
+        res = snapshot in self.snapshots
+        
+        if res:
+            self.data.extend(self.snapshots[snapshot]])
+            
+        return res
+        
     def grow_conversation(self, id, conversation):
         """
         Extend a conversation, if you provided an ID in the add_conversation call.
