@@ -111,10 +111,12 @@ class BayesRehermann(object):
         
         return res
 
-    def sentence_data(self, sent, history, use_context=True, history_limit=10, **kwargs):
+    def sentence_data(self, sent, history, use_context=True, history_limit=5, **kwargs):
         """
         Returns the feature set used in the classifier. Feel free to
         replace in subclasses :)
+        
+        Be very careful with the history limit parameter. It may be memory-consuming!
         """
     
         tokens = nltk.word_tokenize(sent)
@@ -133,13 +135,10 @@ class BayesRehermann(object):
             
             sub_data('tag', tag)
             sub_data('token', word)
-            sub_data('pos', (word, tag))
-            sub_data('token chars', len(word))
             sub_data('tag stem', tag[:2])
-            sub_data('tag branch', tag[2:])
             sub_data('token stem', stemmer.stem(word))
             sub_data('first letter', word[0])
-            sub_data('first letter', word[-1])
+            sub_data('last letter', word[-1])
             
         if use_context:
             for i, h in enumerate(history[-history_limit:][::-1]):
@@ -176,7 +175,7 @@ class BayesRehermann(object):
                  
             for context in self.data:
                 for i, sentence in enumerate(context[:-1]):
-                    for wi, word in list(enumerate(context[i + 1].split(' ') + [False])):
+                    for wi, word in list(enumerate(context[i + 1].split(' '))):
                         train_data.append((self.sentence_data(sentence, context[:i], response_index=wi), word))
                         
             if message_handler is not None:
