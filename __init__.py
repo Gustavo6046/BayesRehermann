@@ -169,19 +169,6 @@ class BayesRehermann(object):
         # to avoid having to retrain a classifier at runtime everytime
         # we want to get some output from the BRCCS.
         train_data = []
-            
-        # Commits the new snapshot to the sqlite database, if asked to.
-        if self.database is not None and commit:
-            c = self.conn().cursor()
-            c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
-            c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
-            
-            for i, context in enumerate(self.snapshots[key]):
-                for sentence in context:
-                    c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
-            
-            self.conn().commit()
-             
         if message_handler is not None:
             message_handler("Constructing training data for snapshot '{}'...".format(key))
              
@@ -207,6 +194,18 @@ class BayesRehermann(object):
             if clear_data:
                 self.data = []
                 self.conversation_ids = {}
+                
+            # Commits the new snapshot to the sqlite database, if asked to.
+            if self.database is not None and commit:
+                c = self.conn().cursor()
+                c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
+                c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
+                
+                for i, context in enumerate(self.snapshots[key]):
+                    for sentence in context:
+                        c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
+                
+                self.conn().commit()
                 
         if use_threads:
             Thread(target=train).start()
