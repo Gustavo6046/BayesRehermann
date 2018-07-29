@@ -62,7 +62,7 @@ class BayesRehermann(object):
       achieve what it needs.
     """
 
-    def __init__(self, database=None):
+    def __init__(self, database=None, init_threads=False):
         """
         Initializes the Bayes-Rehermann classification system.
         database should be the filename of the sqlite database
@@ -104,7 +104,14 @@ class BayesRehermann(object):
                     
                     contexts[cind].append(sentence)
                     
-                self.add_snapshot(name, contexts, message_handler=print, commit=False, use_threads=False)
+                def train():
+                    self.add_snapshot(name, contexts, message_handler=print, commit=False, use_threads=False)
+                    
+                if init_threads:
+                    Thread(target=train).start()
+                    
+                else:
+                    train()
                 
             c.execute("SELECT * FROM History;")
             
@@ -136,7 +143,7 @@ class BayesRehermann(object):
         
         return res
 
-    def sentence_data(self, sent, history, use_context=True, use_syllables=1, **kwargs):
+    def sentence_data(self, sent, history, use_context=True, use_syllables=1, max_history=5, **kwargs):
         """
         Returns the feature set used in the classifier. Feel free to
         replace in subclasses :)
@@ -185,10 +192,13 @@ class BayesRehermann(object):
             # sub_data('token', word)
             # sub_data('token stem', stemmer.stem(word))
             
+        a = 0
+            
         if use_context:
-            for i, h in enumerate(history[::-1]):
+            for i, h in enumerate(history[:max_history][::-1]):
                 for k, v in self.sentence_data(h, history[i + 1:], use_context=False, use_syllables=use_syllables - 1).items():
                     data['-{} {}'.format(i, k)] = v
+                    a += 1
             
         return data
         
@@ -233,7 +243,7 @@ class BayesRehermann(object):
                 for i, sentence in enumerate(context[:-1]):
                     # print("==========")
                     sentences += 1
-                    t = self.sentence_data(sentence, context[i - history_limit:i])
+                    t = self.sentence_data(sentence, context[:i], max_history=history_limit)
                 
                     for wi, word in list(enumerate(context[i + 1].split(' ') + [""] * 10)):
                         a = dict(t)
@@ -247,9 +257,6 @@ class BayesRehermann(object):
                         train_data.append(a)
                         
             sys.stdout.write('\n')
-                        
-            self.logger.debug("Training data length: " + str(len(train_data)))
-            self.logger.debug("Training data volume: " + str(sum(map(len, train_data))))
                         
             if message_handler is not None:
                 message_handler("Training snapshot '{}'...".format(key))
@@ -344,7 +351,7 @@ class BayesRehermann(object):
             
         return b
         
-    def respond(self, snapshot, sentence, speaker=None, use_history=True, commit_history=True, limit=1000, recursion_limit=5):
+    def respond(self, snapshot, sentence, speaker=None, use_history=True, commit_history=True, history_limit=4, limit=1000, recursion_limit=5):
         """
         Returns the response to the given sentence, predicted by the classifier of the
         corresponding snapshot.
@@ -369,7 +376,7 @@ class BayesRehermann(object):
         recurse = 0
         
         while True:
-            word = c.classify(self.sentence_data(sentence, history, response_index=i))
+            word = c.classify(self.sentence_data(sentence, history, history_limit=history_limit, response_index=i))
             
             if word == "":
                 break
