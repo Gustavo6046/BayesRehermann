@@ -49,6 +49,7 @@ class BayesRehermann(object):
         self.data = []
         self.classifiers = {}
         self.history = {}
+        self.conversation_ids = {}
         self.snapshots = {}
         self.database = database
         
@@ -211,15 +212,41 @@ class BayesRehermann(object):
         
         return True
         
-    def add_conversation(self, conversation):
+    def add_conversation(self, conversation, id=None):
         """
         Adds a list of sentences, in a conversational format, to the current
         data buffer. A sequence of add_conversation calls, followed by create_snapshot,
         will create a snapshot and a classifier for this conversation. Alternatvely, you can
         use a list of conversations and add_snapshot.
+        
+        If you want to grow the conversation later, provide an ID.
         """
     
+        if id is not None:
+            self.conversation_ids[id] = len(self.data)
+
         self.data.append(conversation)
+        
+    def grow_conversation(self, id, conversation):
+        """
+        Extend a conversation, if you provided an ID in the add_conversation call.
+        Useful for dynamic environments, like IRC.
+        """
+        if id not in self.conversation_ids:
+            self.add_conversation(conversation, id)
+            
+        else:
+            self.data[self.conversation_ids[id]].extend(conversation)
+        
+    def reset_id(self, id):
+        """
+        Resets a conversation ID, so the next time you use it,
+        it'll point to a new conversation. Useful for dynamic environments,
+        like IRC, where conversations may be split by longer time periods;
+        for you'll want to reset the conversation ID (server name + channel
+         ame) at every split.
+        """
+        self.conversation_ids.pop(id)
         
     def respond(self, snapshot, sentence, speaker=None, use_history=True, commit_history=True, limit=1000, recursion_limit=5):
         """
