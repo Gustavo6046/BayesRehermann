@@ -179,7 +179,10 @@ class BayesRehermann(object):
                     c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
             
             self.conn.commit()
-                    
+             
+        if message_handler is not None:
+            message_handler("Constructing training data for snapshot '{}'...".format(key))
+             
         for context in self.data:
             train_data += [(self.sentence_data(sentence, context[:i], response_index=wi), word)
                 for i, sentence in enumerate(context[:-1])
