@@ -186,10 +186,9 @@ class BayesRehermann(object):
             message_handler("Constructing training data for snapshot '{}'...".format(key))
              
         for context in self.data:
-            train_data += [(self.sentence_data(sentence, context[:i], response_index=wi), word)
-                for i, sentence in enumerate(context[:-1])
+            for i, sentence in enumerate(context[:-1])
                 for wi, word in list(enumerate(context[i + 1].split(' ') + [False] * 50))
-            ]
+                    train_data.append((self.sentence_data(sentence, context[:i], response_index=wi), word))
             
         def train():
             if message_handler is not None:
