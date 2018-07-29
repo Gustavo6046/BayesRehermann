@@ -233,14 +233,18 @@ class BayesRehermann(object):
                 for i, sentence in enumerate(context[:-1]):
                     # print("==========")
                     sentences += 1
+                    t = self.sentence_data(sentence, context[i - history_limit:i])
                 
-                    for wi, word in list(enumerate(context[i + 1].split(' '))):
-                        t = (self.sentence_data(sentence, context[i - history_limit:i], response_index=wi), word)
+                    for wi, word in list(enumerate(context[i + 1].split(' ') + [""] * 10)):
+                        a = dict(t)
+                        a['response_index'] = wi
+                        a = (a, word)
+                        
                         sets += 1
-                        size += len(t[0].keys())
+                        size += len(a[0].keys())
                         sys.stdout.write('\rTotal Features: {}  | Total Sentences: {}  | Total Sets: {}     '.format(size, sentences, sets))
                         # print(t[1], len(t[0].keys()))
-                        train_data.append(t)
+                        train_data.append(a)
                         
             sys.stdout.write('\n')
                         
@@ -367,7 +371,7 @@ class BayesRehermann(object):
         while True:
             word = c.classify(self.sentence_data(sentence, history, response_index=i))
             
-            if word is False:
+            if word == "":
                 break
                 
             if word == last:
