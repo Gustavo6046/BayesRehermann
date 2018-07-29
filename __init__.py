@@ -174,12 +174,21 @@ class BayesRehermann(object):
             if message_handler is not None:
                 message_handler("Constructing training data for snapshot '{}'...".format(key))
                  
-            self.logger.debug("Constructing training data from {} effective sentences.".format(sum(map(len, self.data))))
+            self.logger.debug("Constructing training data from {} effective sentences, for a total of {} words and {} tokens.".format(
+                sum(map(len, self.data)),
+                sum(map(lambda x: len(x.split(' ')), self.data)),
+                sum(map(lambda x: len(nltk.word_tokenize(x)), self.data))))
+            )
                  
             for context in self.data:
                 for i, sentence in enumerate(context[:-1]):
                     for wi, word in list(enumerate(context[i + 1].split(' '))):
-                        train_data.append((self.sentence_data(sentence, context[i - history_limit:i], response_index=wi), word))
+                        t = (self.sentence_data(sentence, context[i - history_limit:i], response_index=wi), word)
+                        print(t[1], *t[0].keys())
+                        train_data.append(t)
+                        
+            self.logger.debug("Training data length: " + str(len(train_data)))
+            self.logger.debug("Training data volume: " + str(sum(map(len, train_data))))
                         
             if message_handler is not None:
                 message_handler("Training snapshot '{}'...".format(key))
