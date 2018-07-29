@@ -173,8 +173,8 @@ class BayesRehermann(object):
         # Commits the new snapshot to the sqlite database, if asked to.
         if self.database is not None and commit:
             c = self.conn().cursor()
-            c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
             c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
+            c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
             
             for i, context in enumerate(self.snapshots[key]):
                 for sentence in context:
