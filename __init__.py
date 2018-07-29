@@ -247,7 +247,12 @@ class BayesRehermann(object):
         for you'll want to reset the conversation ID (server name + channel
          ame) at every split.
         """
-        self.conversation_ids.pop(id)
+        b = id in self.conversation_ids
+        
+        if b:
+            self.conversation_ids.pop(id)
+            
+        return b
         
     def respond(self, snapshot, sentence, speaker=None, use_history=True, commit_history=True, limit=1000, recursion_limit=5):
         """
