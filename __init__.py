@@ -54,9 +54,7 @@ class BayesRehermann(object):
         self.database = database
         
         if database is not None:
-            self.conn = sqlite3.connect(database)
-            
-            c = self.conn.cursor()
+            c = self.conn().cursor()
             
             c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='SnapIndex';")
             
@@ -67,7 +65,7 @@ class BayesRehermann(object):
             
             if len(c.fetchall()) < 1:
                 c.execute("CREATE TABLE History (speaker text, sentence text);")
-                self.conn.commit()
+                self.conn().commit()
             
             c.execute("SELECT * FROM SnapIndex;")
             
@@ -90,9 +88,13 @@ class BayesRehermann(object):
                     self.history[speaker] = []
                     
                 self.history[speaker].append(sentence)
+        
+    def conn(self):
+        if self.database is not None:
+            return sqlite3.connect(self.database)
             
         else:
-            self.conn = None
+            return None
         
     def add_snapshot(self, name, data, *args, **kwargs):
         """
@@ -170,7 +172,7 @@ class BayesRehermann(object):
             
         # Commits the new snapshot to the sqlite database, if asked to.
         if self.database is not None and commit:
-            c = self.conn.cursor()
+            c = self.conn().cursor()
             c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
             c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
             
@@ -178,7 +180,7 @@ class BayesRehermann(object):
                 for sentence in context:
                     c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
             
-            self.conn.commit()
+            self.conn().commit()
              
         if message_handler is not None:
             message_handler("Constructing training data for snapshot '{}'...".format(key))
@@ -328,7 +330,7 @@ class BayesRehermann(object):
             self.history[speaker].append(' '.join(response))
             
             if commit_history:
-                c = self.conn.cursor()
+                c = self.conn().cursor()
                 
                 c.execute("INSERT INTO History VALUES (?, ?);", (speaker, sentence))
                 c.execute("INSERT INTO History VALUES (?, ?);", (speaker, ' '.join(response)))
