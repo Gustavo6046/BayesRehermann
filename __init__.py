@@ -17,6 +17,8 @@ import random
 import nltk
 import pandas
 import sqlite3
+import logging
+import sys
 
 from nltk.stem.porter import *
 from threading import Thread
@@ -24,6 +26,27 @@ from threading import Thread
 
 stemmer = PorterStemmer()
 
+
+def syllables(word):
+    syllables = []
+    s = ''
+    vowels = 'aeiou'
+    vowel = False
+    
+    for l in word:
+        if (l.lower() not in vowels and vowel) or l == '-':
+            syllables.append(s)
+            s = ''
+            
+        if l != '-':
+            s += l
+            vowel = l.lower() in vowels
+        
+    if s != '':
+        syllables.append(s)
+    
+    return syllables
+    
 
 class BayesRehermann(object):
     """
@@ -46,16 +69,17 @@ class BayesRehermann(object):
         to use to keep and retrieve snapshots.
         """
     
+        self.logger = logging.getLogger("BayesRehermann")
         self.data = []
         self.classifiers = {}
         self.history = {}
+        self.conversation_ids = {}
         self.snapshots = {}
         self.database = database
         
         if database is not None:
-            self.conn = sqlite3.connect(database)
-            
-            c = self.conn.cursor()
+            conn = self.conn()
+            c = conn.cursor()
             
             c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='SnapIndex';")
             
@@ -66,7 +90,7 @@ class BayesRehermann(object):
             
             if len(c.fetchall()) < 1:
                 c.execute("CREATE TABLE History (speaker text, sentence text);")
-                self.conn.commit()
+                conn.commit()
             
             c.execute("SELECT * FROM SnapIndex;")
             
@@ -80,7 +104,7 @@ class BayesRehermann(object):
                     
                     contexts[cind].append(sentence)
                     
-                self.add_snapshot(name, contexts, message_handler=print, commit=False)
+                self.add_snapshot(name, contexts, message_handler=print, commit=False, use_threads=False)
                 
             c.execute("SELECT * FROM History;")
             
@@ -89,9 +113,13 @@ class BayesRehermann(object):
                     self.history[speaker] = []
                     
                 self.history[speaker].append(sentence)
+        
+    def conn(self):
+        if self.database is not None:
+            return sqlite3.connect(self.database)
             
         else:
-            self.conn = None
+            return None
         
     def add_snapshot(self, name, data, *args, **kwargs):
         """
@@ -104,17 +132,28 @@ class BayesRehermann(object):
         old = self.data
         self.data = data
         res = self.create_snapshot(name, *args, **kwargs)
-            
         self.data = old
+        
         return res
 
-    def sentence_data(self, sent, history, use_context=True, **kwargs):
+    def sentence_data(self, sent, history, use_context=True, use_syllables=1, **kwargs):
         """
         Returns the feature set used in the classifier. Feel free to
         replace in subclasses :)
         """
     
-        tokens = nltk.word_tokenize(sent)
+        #tokens = nltk.word_tokenize(sent)
+        tokens = tuple(filter(lambda x: x != '', sent.split(' ')))
+        
+        if len(tokens) == 0:
+            data = kwargs
+        
+            data['total chars'] = len(sent)
+            data['total words'] = 0
+            data['total tokens'] = 0
+            
+            return data
+        
         tags = nltk.pos_tag(tokens)
         
         data = kwargs
@@ -129,23 +168,31 @@ class BayesRehermann(object):
                 data["{} #-{}".format(name, len(tags) - i)] = value
             
             sub_data('tag', tag)
-            sub_data('token', word)
-            sub_data('pos', (word, tag))
-            sub_data('token chars', len(word))
             sub_data('tag stem', tag[:2])
-            sub_data('tag branch', tag[2:])
-            sub_data('token stem', stemmer.stem(word))
-            sub_data('first letter', word[0])
-            sub_data('first letter', word[-1])
+            
+            if use_syllables:
+                s = ''
+                
+                for i, syl in enumerate(syllables(word)):
+                    sub_data('syllable {}'.format(i), syl)
+                    s = syl
+                    
+                sub_data('last syllable', syl)
+                
+            else:
+                sub_data('word', word)
+            
+            # sub_data('token', word)
+            # sub_data('token stem', stemmer.stem(word))
             
         if use_context:
-            for i, h in enumerate(history):
-                for k, v in self.sentence_data(h, history[i + 1:], use_context=False).items():
+            for i, h in enumerate(history[::-1]):
+                for k, v in self.sentence_data(h, history[i + 1:], use_context=False, use_syllables=use_syllables - 1).items():
                     data['-{} {}'.format(i, k)] = v
             
         return data
         
-    def create_snapshot(self, key, clear_data=True, message_handler=print, commit=True, use_threads=True):
+    def create_snapshot(self, key, clear_data=True, message_handler=print, history_limit=1, commit=True, use_threads=True):
         """
         Creates a snapshot using the current sentence data buffer.
         """
@@ -165,43 +212,71 @@ class BayesRehermann(object):
         # This very classifier is what the snapshot system exists;
         # to avoid having to retrain a classifier at runtime everytime
         # we want to get some output from the BRCCS.
-        train_data = []
-        
-        for context in self.data:
-            train_data += [(self.sentence_data(sentence, context[:i], response_index=wi), word)
-                for i, sentence in enumerate(context[:-1])
-                for wi, word in list(enumerate(context[i + 1].split(' ') + [False] * 50))
-            ]
             
         def train():
+            train_data = []
+            
+            if message_handler is not None:
+                message_handler("Constructing training data for snapshot '{}'...".format(key))
+                 
+            self.logger.debug("Constructing training data from {} effective sentences, for a total of {} words and {} tokens.".format(
+                sum(map(len, self.data[:-1])),
+                sum(map(lambda x: sum([len(a.split(' ')) for a in x]), self.data[:-1])),
+                sum(map(lambda x: sum([len(nltk.word_tokenize(a)) for a in x]), self.data[:-1])),
+            ))
+                 
+            size = 0
+            sentences = 0
+            sets= 0
+                 
+            for context in self.data:
+                for i, sentence in enumerate(context[:-1]):
+                    # print("==========")
+                    sentences += 1
+                
+                    for wi, word in list(enumerate(context[i + 1].split(' '))):
+                        t = (self.sentence_data(sentence, context[i - history_limit:i], response_index=wi), word)
+                        sets += 1
+                        size += len(t[0].keys())
+                        sys.stdout.write('\rTotal Features: {}  | Total Sentences: {}  | Total Sets: {}     '.format(size, sentences, sets))
+                        # print(t[1], len(t[0].keys()))
+                        train_data.append(t)
+                        
+            sys.stdout.write('\n')
+                        
+            self.logger.debug("Training data length: " + str(len(train_data)))
+            self.logger.debug("Training data volume: " + str(sum(map(len, train_data))))
+                        
             if message_handler is not None:
                 message_handler("Training snapshot '{}'...".format(key))
             
             if len(train_data) > 0:
                 # print(train_data[0])
-                self.classifiers[key] = nltk.NaiveBayesClassifier.train(train_data)
+                self.classifiers[key] = nltk.DecisionTreeClassifier.train(train_data)
                 
             else:
                 raise ValueError("No training data from snapshot '{}'!".format(key))
             
             if message_handler is not None:
-                message_handler("Snapshot '{}' created successfully!".format(key))
-            
-            # Commits the new snapshot to the sqlite database, if necessary.
+                message_handler("Snapshot '{}' trained successfully!".format(key))
+                
+            if clear_data:
+                self.data = []
+                self.conversation_ids = {}
+                
+            # Commits the new snapshot to the sqlite database, if asked to.
             if self.database is not None and commit:
-                conn = sqlite3.connect(self.database)
+                conn = self.conn()
                 c = conn.cursor()
-                c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
-                c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
+                
+                c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots)))
+                c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots)))
                 
                 for i, context in enumerate(self.snapshots[key]):
                     for sentence in context:
-                        c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
+                        c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots)), (i, sentence))
                 
                 conn.commit()
-                
-            if clear_data:
-                self.data = {}
                 
         if use_threads:
             Thread(target=train).start()
@@ -211,15 +286,59 @@ class BayesRehermann(object):
         
         return True
         
-    def add_conversation(self, conversation):
+    def add_conversation(self, conversation, id=None):
         """
         Adds a list of sentences, in a conversational format, to the current
         data buffer. A sequence of add_conversation calls, followed by create_snapshot,
         will create a snapshot and a classifier for this conversation. Alternatvely, you can
         use a list of conversations and add_snapshot.
+        
+        If you want to grow the conversation later, provide an ID, so you can use the
+        grow_conversation method later on.
         """
     
+        if id is not None:
+            self.conversation_ids[id] = len(self.data)
+
         self.data.append(conversation)
+        
+    def restore_snapshot(self, snapshot):
+        """
+        Restore a snapshot, extending it into the conversational buffer, usually to further develop it into
+        another snapshot, or include it as part of another snapshot (which technically is the same).
+        """
+        res = snapshot in self.snapshots
+        
+        if res:
+            self.data.extend(self.snapshots[snapshot])
+            
+        return res
+        
+    def grow_conversation(self, id, conversation):
+        """
+        Extend a conversation, if you provided an ID in the add_conversation call.
+        Useful for dynamic environments, like IRC.
+        """
+        if id not in self.conversation_ids:
+            self.add_conversation(conversation, id)
+            
+        else:
+            self.data[self.conversation_ids[id]].extend(conversation)
+        
+    def reset_id(self, id):
+        """
+        Resets a conversation ID, so the next time you use it,
+        it'll point to a new conversation. Useful for dynamic environments,
+        like IRC, where conversations may be split by longer time periods;
+        for you'll want to reset the conversation ID (server name + channel
+         ame) at every split.
+        """
+        b = id in self.conversation_ids
+        
+        if b:
+            self.conversation_ids.pop(id)
+            
+        return b
         
     def respond(self, snapshot, sentence, speaker=None, use_history=True, commit_history=True, limit=1000, recursion_limit=5):
         """
@@ -255,7 +374,7 @@ class BayesRehermann(object):
                 recurse += 1
                 
             else:
-                recurse == 0
+                recurse = 0
                 
             if recurse > recursion_limit:
                 response = response[:-recurse + 1]
@@ -271,6 +390,8 @@ class BayesRehermann(object):
             recursion_limit = min(recursion_limit, limit - len(response))
         
         if use_history and speaker is not None:
+            self.grow_conversation("__RESPONSE_HISTORY:{}__".format(speaker), [sentence, ' '.join(response)])
+        
             if speaker not in self.history:
                 self.history[speaker] = []
                 
@@ -278,9 +399,12 @@ class BayesRehermann(object):
             self.history[speaker].append(' '.join(response))
             
             if commit_history:
-                c = self.conn.cursor()
+                conn = self.conn()
+                c = conn.cursor()
                 
                 c.execute("INSERT INTO History VALUES (?, ?);", (speaker, sentence))
                 c.execute("INSERT INTO History VALUES (?, ?);", (speaker, ' '.join(response)))
+                
+                conn.commit()
         
         return ' '.join(response)

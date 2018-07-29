@@ -6,11 +6,12 @@ chatbots.
 
 The name comes from two facts:
 
-* the model was designed by Gustavo R. Reherman
-  (Gustavo6046);
+* Bayes because the model originally used mainly naive Bayes
+  classification to achieve performant training and response.
+  (now it uses decision trees).
 
-* the model utilizes mainly naive Bayes classification to
-  achieve what it needs.
+* Rehermann because the model was designed by Gustavo R.
+  Reherman (Gustavo6046)!
 
 It works by classifying every input sentence I's feature set,
 with a response word index T, into the predicted output word
