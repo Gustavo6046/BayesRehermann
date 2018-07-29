@@ -177,8 +177,8 @@ class BayesRehermann(object):
             self.logger.debug("Constructing training data from {} effective sentences, for a total of {} words and {} tokens.".format(
                 sum(map(len, self.data)),
                 sum(map(lambda x: len(x.split(' ')), self.data)),
-                sum(map(lambda x: len(nltk.word_tokenize(x)), self.data))))
-            )
+                sum(map(lambda x: len(nltk.word_tokenize(x)), self.data))
+            ))
                  
             for context in self.data:
                 for i, sentence in enumerate(context[:-1]):
