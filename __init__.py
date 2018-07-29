@@ -142,7 +142,7 @@ class BayesRehermann(object):
             sub_data('first letter', word[-1])
             
         if use_context:
-            for i, h in enumerate(history[-i + 1 + history_limit:][::-1]):
+            for i, h in enumerate(history[-history_limit:][::-1]):
                 for k, v in self.sentence_data(h, history[i + 1:], use_context=False).items():
                     data['-{} {}'.format(i, k)] = v
             
@@ -168,16 +168,17 @@ class BayesRehermann(object):
         # This very classifier is what the snapshot system exists;
         # to avoid having to retrain a classifier at runtime everytime
         # we want to get some output from the BRCCS.
-        train_data = []
-        if message_handler is not None:
-            message_handler("Constructing training data for snapshot '{}'...".format(key))
-             
-        for context in self.data:
-            for i, sentence in enumerate(context[:-1]):
-                for wi, word in list(enumerate(context[i + 1].split(' ') + [False] * 50)):
-                    train_data.append((self.sentence_data(sentence, context[:i], response_index=wi), word))
             
         def train():
+            train_data = []
+            if message_handler is not None:
+                message_handler("Constructing training data for snapshot '{}'...".format(key))
+                 
+            for context in self.data:
+                for i, sentence in enumerate(context[:-1]):
+                    for wi, word in list(enumerate(context[i + 1].split(' ') + [False])):
+                        train_data.append((self.sentence_data(sentence, context[:i], response_index=wi), word))
+                        
             if message_handler is not None:
                 message_handler("Training snapshot '{}'...".format(key))
             
