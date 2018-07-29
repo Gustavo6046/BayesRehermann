@@ -81,7 +81,7 @@ class BayesRehermann(object):
                     
                     contexts[cind].append(sentence)
                     
-                self.add_snapshot(name, contexts, message_handler=print, commit=False)
+                self.add_snapshot(name, contexts, message_handler=print, commit=False, use_threads=False)
                 
             c.execute("SELECT * FROM History;")
             
@@ -105,8 +105,8 @@ class BayesRehermann(object):
         old = self.data
         self.data = data
         res = self.create_snapshot(name, *args, **kwargs)
-            
         self.data = old
+        
         return res
 
     def sentence_data(self, sent, history, use_context=True, **kwargs):
@@ -167,7 +167,19 @@ class BayesRehermann(object):
         # to avoid having to retrain a classifier at runtime everytime
         # we want to get some output from the BRCCS.
         train_data = []
-        
+            
+        # Commits the new snapshot to the sqlite database, if asked to.
+        if self.database is not None and commit:
+            c = self.conn.cursor()
+            c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
+            c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
+            
+            for i, context in enumerate(self.snapshots[key]):
+                for sentence in context:
+                    c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
+            
+            self.conn.commit()
+                    
         for context in self.data:
             train_data += [(self.sentence_data(sentence, context[:i], response_index=wi), word)
                 for i, sentence in enumerate(context[:-1])
@@ -186,23 +198,11 @@ class BayesRehermann(object):
                 raise ValueError("No training data from snapshot '{}'!".format(key))
             
             if message_handler is not None:
-                message_handler("Snapshot '{}' created successfully!".format(key))
-            
-            # Commits the new snapshot to the sqlite database, if necessary.
-            if self.database is not None and commit:
-                conn = sqlite3.connect(self.database)
-                c = conn.cursor()
-                c.execute("INSERT INTO SnapIndex VALUES (?, ?);", (key, len(self.snapshots) - 1))
-                c.execute("CREATE TABLE Snapshot_{} (context int, sentence text);".format(len(self.snapshots) - 1))
-                
-                for i, context in enumerate(self.snapshots[key]):
-                    for sentence in context:
-                        c.execute("INSERT INTO Snapshot_{} VALUES (?, ?);".format(len(self.snapshots) - 1), (i, sentence))
-                
-                conn.commit()
+                message_handler("Snapshot '{}' trained successfully!".format(key))
                 
             if clear_data:
-                self.data = {}
+                self.data = []
+                self.conversation_ids = {}
                 
         if use_threads:
             Thread(target=train).start()
@@ -219,7 +219,8 @@ class BayesRehermann(object):
         will create a snapshot and a classifier for this conversation. Alternatvely, you can
         use a list of conversations and add_snapshot.
         
-        If you want to grow the conversation later, provide an ID.
+        If you want to grow the conversation later, provide an ID, so you can use the
+        grow_conversation method later on.
         """
     
         if id is not None:
@@ -298,6 +299,8 @@ class BayesRehermann(object):
             recursion_limit = min(recursion_limit, limit - len(response))
         
         if use_history and speaker is not None:
+            self.grow_conversation("__RESPONSE_HISTORY:{}__".format(speaker), [sentence, ' '.join(response)])
+        
             if speaker not in self.history:
                 self.history[speaker] = []
                 
