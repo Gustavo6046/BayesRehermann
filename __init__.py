@@ -236,7 +236,7 @@ class BayesRehermann(object):
         res = snapshot in self.snapshots
         
         if res:
-            self.data.extend(self.snapshots[snapshot]])
+            self.data.extend(self.snapshots[snapshot])
             
         return res
         
